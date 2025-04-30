@@ -1,20 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <!-- Título de la página web -->
     <title>three.js webgl - FBX loader</title>
     <meta charset="utf-8" />
-    <!-- Configuración para una experiencia de visualización óptima en dispositivos móviles -->
     <meta
       name="viewport"
       content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0"
     />
-    <!-- Enlace a la hoja de estilo principal -->
     <link type="text/css" rel="stylesheet" href="main.css" />
   </head>
 
   <body>
-    <!-- Información sobre el ejemplo, incluyendo enlaces a recursos externos -->
     <div id="info">
       <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a>
       - FBXLoader<br />
@@ -24,7 +20,6 @@
       >
     </div>
 
-    <!-- Importaciones de módulos y configuración de mapas de importación -->
     <script type="importmap">
       {
         "imports": {
@@ -35,39 +30,45 @@
     </script>
 
     <script type="module">
-      // Importación de módulos de three.js y utilidades adicionales
       import * as THREE from "three";
+
       import Stats from "three/addons/libs/stats.module.js";
+
       import { OrbitControls } from "three/addons/controls/OrbitControls.js";
       import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
       import { GUI } from "three/addons/libs/lil-gui.module.min.js";
+
+      // ---------------------------------------------------------------------
       import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
       import { Audio, AudioListener, AudioLoader } from "three";
+      // ---------------------------------------------------------------------
 
-      // Declaración de variables globales
       const manager = new THREE.LoadingManager();
+
       let camera, scene, renderer, stats, object, loader, guiMorphsFolder;
       let mixer;
 
       const clock = new THREE.Clock();
 
-      // Parámetros iniciales
       const params = {
-        asset: "Flair",
+        asset: "flair",
       };
 
-      // Lista de activos disponibles
-      const assets = ["Flair", "morph_test"];
+      const assets = ["flair", "morph_test"];
 
-      // Inicialización de la escena
+      let rainParticles, rainGeometry, rainMaterial;
+      let rainSpeed = 2;
+      let rainColor = 0xaaaaaa; // Color inicial gris claro
+      let windStrength = 0; // Inicialmente sin viento
+      let fogDensity = 0.002; // Densidad inicial de la neblina
+      let fogColor = 0xffffff; // Color inicial (blanco)
+
       init();
 
       function init() {
-        // Creación del contenedor principal
         const container = document.createElement("div");
         document.body.appendChild(container);
 
-        // Configuración de la cámara
         camera = new THREE.PerspectiveCamera(
           45,
           window.innerWidth / window.innerHeight,
@@ -76,12 +77,11 @@
         );
         camera.position.set(100, 200, 300);
 
-        // Creación de la escena
         scene = new THREE.Scene();
         scene.background = new THREE.Color(0xa0a0a0);
-        scene.fog = new THREE.Fog(0xa0a0a0, 200, 1000);
+        scene.fog = new THREE.FogExp2(fogColor, fogDensity);
+        //scene.fog = new THREE.Fog( 0xa0a0a0, 200, 1000 );
 
-        // Configuración de luces
         const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 5);
         hemiLight.position.set(0, 200, 0);
         scene.add(hemiLight);
@@ -95,63 +95,36 @@
         dirLight.shadow.camera.right = 120;
         scene.add(dirLight);
 
-        // Luz de punto adicional
-        const pointLight = new THREE.PointLight(0xff00ff, 2, 500);
-        pointLight.position.set(0, 300, 0);
-        scene.add(pointLight);
+        // scene.add( new THREE.CameraHelper( dirLight.shadow.camera ) );
 
-        // Piso con textura
-        const floorTexture = new THREE.TextureLoader().load(
-          "textures/floor.jpg"
-        ); // Asegúrate de tener esta imagen
-        floorTexture.wrapS = floorTexture.wrapT = THREE.RepeatWrapping;
-        floorTexture.repeat.set(10, 10);
+        // ground
+        const textureLoader = new THREE.TextureLoader();
+        const groundTexture = textureLoader.load("models/collada/ground.jpg");
+        groundTexture.wrapS = groundTexture.wrapT = THREE.RepeatWrapping;
+        groundTexture.repeat.set(10, 10);
 
-        const floorMaterial = new THREE.MeshPhongMaterial({
-          map: floorTexture,
-        });
-        const floorMesh = new THREE.Mesh(
+        const mesh = new THREE.Mesh(
           new THREE.PlaneGeometry(2000, 2000),
-          floorMaterial
+          new THREE.MeshStandardMaterial({
+            map: groundTexture,
+            roughness: 0.6,
+            metalness: 1,
+            envMap: scene.environment,
+            envMapIntensity: 0,
+          })
         );
-        floorMesh.rotation.x = -Math.PI / 2;
-        floorMesh.receiveShadow = true;
-        scene.add(floorMesh);
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.receiveShadow = true;
+        scene.add(mesh);
 
-        // Creación de una cuadrícula de ayuda
         const grid = new THREE.GridHelper(2000, 20, 0x000000, 0x000000);
         grid.material.opacity = 0.2;
         grid.material.transparent = true;
         scene.add(grid);
 
-        // Configuración del cargador FBX
         loader = new FBXLoader(manager);
         loadAsset(params.asset);
 
-        // Crear partículas
-        const particleGeometry = new THREE.BufferGeometry();
-        const particleCount = 500;
-        const positions = [];
-
-        for (let i = 0; i < particleCount; i++) {
-          positions.push(Math.random() * 2000 - 1000); // X
-          positions.push(Math.random() * 2000 - 1000); // Y
-          positions.push(Math.random() * 2000 - 1000); // Z
-        }
-
-        particleGeometry.setAttribute(
-          "position",
-          new THREE.Float32BufferAttribute(positions, 3)
-        );
-
-        const particleMaterial = new THREE.PointsMaterial({
-          color: 0xffffff,
-          size: 5,
-        });
-        const particles = new THREE.Points(particleGeometry, particleMaterial);
-        scene.add(particles);
-
-        // Configuración del renderizador
         renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setPixelRatio(window.devicePixelRatio);
         renderer.setSize(window.innerWidth, window.innerHeight);
@@ -159,19 +132,92 @@
         renderer.shadowMap.enabled = true;
         container.appendChild(renderer.domElement);
 
-        // Configuración de controles de órbita
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.target.set(0, 100, 0);
         controls.update();
 
-        // Ajuste de la ventana al cambiar el tamaño
+        // -----------------------------
+        // Lluvia
+        rainGeometry = new THREE.BufferGeometry();
+        const rainCount = 15000;
+
+        const rainPositions = [];
+        for (let i = 0; i < rainCount; i++) {
+          rainPositions.push(
+            Math.random() * 1000 - 500,
+            Math.random() * 500,
+            Math.random() * 1000 - 500
+          );
+        }
+
+        rainGeometry.setAttribute(
+          "position",
+          new THREE.Float32BufferAttribute(rainPositions, 3)
+        );
+
+        rainMaterial = new THREE.PointsMaterial({
+          color: rainColor,
+          size: 0.95,
+          transparent: true,
+        });
+
+        rainParticles = new THREE.Points(rainGeometry, rainMaterial);
+        scene.add(rainParticles);
+
+        // -----------------------------
+
         window.addEventListener("resize", onWindowResize);
 
-        // Configuración de estadísticas
+        // -----------------------------
+        window.addEventListener("keydown", function (event) {
+          if (event.code === "ArrowUp") {
+            rainSpeed += 0.5; // Aumenta velocidad
+          } else if (event.code === "ArrowDown") {
+            rainSpeed = Math.max(0, rainSpeed - 0.5); // Reduce velocidad, mínimo 0
+          } else if (event.code === "KeyR") {
+            rainColor = 0xff0000; // Cambia a rojo
+            rainMaterial.color.setHex(rainColor);
+          } else if (event.code === "KeyB") {
+            rainColor = 0x0000ff; // Cambia a azul
+            rainMaterial.color.setHex(rainColor);
+          } else if (event.code === "KeyG") {
+            rainColor = 0x00ff00; // Cambia a verde
+            rainMaterial.color.setHex(rainColor);
+          } else if (event.code === "KeyW") {
+            rainColor = 0xffffff; // Cambia a blanco
+            rainMaterial.color.setHex(rainColor);
+          } else if (event.code === "KeyV") {
+            windStrength += 0.5; // Incrementa el viento
+            if (windStrength > 5) {
+              windStrength = 0; // Si es muy fuerte, reinicia a cero
+            }
+          } else if (event.code === "ArrowLeft") {
+            fogDensity = Math.max(0, fogDensity - 0.0005); // Hace más ligera la neblina
+            updateFog();
+          } else if (event.code === "ArrowRight") {
+            fogDensity = Math.min(0.1, fogDensity + 0.0005); // Hace más espesa la neblina
+            updateFog();
+          } else if (event.code === "KeyA") {
+            fogColor = 0xff0000; // Rojo
+            updateFog();
+          } else if (event.code === "KeyS") {
+            fogColor = 0x00ff00; // Verde
+            updateFog();
+          } else if (event.code === "KeyD") {
+            fogColor = 0x0000ff; // Azul
+            updateFog();
+          } else if (event.code === "KeyF") {
+            fogColor = 0xffffff; // Blanco
+            updateFog();
+          }
+        });
+
+        // -----------------------------
+
+        // stats
         stats = new Stats();
         container.appendChild(stats.dom);
 
-        // Configuración de la interfaz gráfica
         const gui = new GUI();
         gui.add(params, "asset", assets).onChange(function (value) {
           loadAsset(value);
@@ -179,7 +225,7 @@
 
         guiMorphsFolder = gui.addFolder("Morphs").hide();
 
-        // Carga de un entorno HDR
+        // --------------------------------------------------------------
         const rgbeLoader = new RGBELoader();
         rgbeLoader.load(
           "models/rgbe/studio_small_03_4k.hdr",
@@ -190,7 +236,6 @@
           }
         );
 
-        // Configuración de audio
         const listener = new AudioListener();
         camera.add(listener);
 
@@ -203,13 +248,19 @@
           sound.setVolume(0.5);
           sound.play();
         });
+        // --------------------------------------------------------------
       }
 
-      // Función para cargar activos FBX
+      // ----------------------------------------
+      function updateFog() {
+        scene.fog.color.setHex(fogColor);
+        scene.fog.density = fogDensity;
+      }
+      // ----------------------------------------
+
       function loadAsset(asset) {
         loader.load("models/fbx/" + asset + ".fbx", function (group) {
           if (object) {
-            // Limpieza de recursos anteriores
             object.traverse(function (child) {
               if (child.material) {
                 const materials = Array.isArray(child.material)
@@ -220,16 +271,20 @@
                   material.dispose();
                 });
               }
+
               if (child.geometry) child.geometry.dispose();
             });
+
             scene.remove(object);
           }
 
+          //
+
           object = group;
 
-          // Configuración de animaciones
           if (object.animations && object.animations.length) {
             mixer = new THREE.AnimationMixer(object);
+
             const action = mixer.clipAction(object.animations[0]);
             action.play();
           } else {
@@ -241,14 +296,17 @@
 
           object.traverse(function (child) {
             if (child.isMesh) {
-              // Configuración de material
+              // -----------------------------------------------------------
+              // Aplicar un material de agua o translúcido al modelo
               child.material = new THREE.MeshStandardMaterial({
-                color: 0x00000,
+                color: 0xff3300, // Color rojo acuático
                 transparent: true,
-                opacity: 1,
-                roughness: 0.6,
-                metalness: 0.8,
+                opacity: 0.9,
+                roughness: 0.5,
+                metalness: 0.7,
               });
+              // -----------------------------------------------------------
+
               child.castShadow = true;
               child.receiveShadow = true;
 
@@ -274,18 +332,38 @@
         });
       }
 
-      // Función para manejar el cambio de tamaño de la ventana
       function onWindowResize() {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
+
         renderer.setSize(window.innerWidth, window.innerHeight);
       }
 
-      // Función de animación principal
+      //
+
       function animate() {
         const delta = clock.getDelta();
+
         if (mixer) mixer.update(delta);
+
+        // ---------------------------------------
+        // Animar la lluvia
+        const positions = rainGeometry.attributes.position.array;
+        for (let i = 0; i < positions.length; i += 3) {
+          positions[i + 1] -= rainSpeed * delta * 10; // baja en Y
+          positions[i] += windStrength * delta * 10; // mueve en X (viento)
+
+          if (positions[i + 1] < 0) {
+            // si toca el suelo
+            positions[i + 1] = 500; // reinicia la gota arriba
+            positions[i] = Math.random() * 1000 - 500; // nueva posición X aleatoria
+          }
+        }
+        rainGeometry.attributes.position.needsUpdate = true;
+        // ---------------------------------------
+
         renderer.render(scene, camera);
+
         stats.update();
       }
     </script>
